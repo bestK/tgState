@@ -50,6 +50,22 @@ func InitDB() (*sql.DB, error) {
 		if err != nil {
 			log.Fatal("Failed to create short_links table:", err)
 		}
+
+		// 创建分片记录表
+		chunkQuery := `CREATE TABLE IF NOT EXISTS chunk_records (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			upload_id TEXT NOT NULL,
+			chunk_index INTEGER NOT NULL,
+			chunk_id TEXT NOT NULL,
+			file_name TEXT NOT NULL,
+			ip TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(upload_id, chunk_index)
+		);`
+		_, err = db.Exec(chunkQuery)
+		if err != nil {
+			log.Fatal("Failed to create chunk_records table:", err)
+		}
 	})
 
 	return db, err
@@ -186,4 +202,51 @@ func GetShortCodeByFileId(fileId string) (string, error) {
 		return "", err
 	}
 	return shortCode, nil
+}
+
+// SaveChunkRecord 保存分片记录
+func SaveChunkRecord(uploadId, chunkIndex, chunkId, fileName, ip string) error {
+	_, err := db.Exec("INSERT OR REPLACE INTO chunk_records (upload_id, chunk_index, chunk_id, file_name, ip) VALUES (?, ?, ?, ?, ?)",
+		uploadId, chunkIndex, chunkId, fileName, ip)
+	return err
+}
+
+// GetChunkRecords 获取指定上传ID的所有分片记录
+func GetChunkRecords(uploadId string) ([]ChunkRecord, error) {
+	rows, err := db.Query("SELECT upload_id, chunk_index, chunk_id, file_name, ip, created_at FROM chunk_records WHERE upload_id = ? ORDER BY chunk_index", uploadId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []ChunkRecord
+	for rows.Next() {
+		var record ChunkRecord
+		err := rows.Scan(&record.UploadId, &record.ChunkIndex, &record.ChunkId, &record.FileName, &record.Ip, &record.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return records, nil
+}
+
+// CleanupChunkRecords 清理分片记录
+func CleanupChunkRecords(uploadId string) error {
+	_, err := db.Exec("DELETE FROM chunk_records WHERE upload_id = ?", uploadId)
+	return err
+}
+
+type ChunkRecord struct {
+	UploadId   string    `json:"uploadId"`
+	ChunkIndex int       `json:"chunkIndex"`
+	ChunkId    string    `json:"chunkId"`
+	FileName   string    `json:"fileName"`
+	Ip         string    `json:"ip"`
+	CreatedAt  time.Time `json:"createdAt"`
 }

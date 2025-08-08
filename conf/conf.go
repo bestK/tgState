@@ -17,6 +17,7 @@ type UploadResponse struct {
 	ShortUrl     string `json:"shortUrl"`
 	ShortFileUrl string `json:"shortFileUrl"`
 	Name         string `json:"name"`
+	ChunkId      string `json:"chunkId,omitempty"`
 }
 
 type ResponseResult struct {

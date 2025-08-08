@@ -182,3 +182,26 @@ func GenerateShortCode(length int) string {
 
 	return string(result)
 }
+
+// CreateMergedFile 创建合并文件的元数据
+func CreateMergedFile(fileName string, chunkIds []string, fileSize int64) string {
+	// 创建合并文件的元数据内容
+	content := fmt.Sprintf("tgstate-blob\n%s\nsize%d\n", fileName, fileSize)
+
+	// 添加所有分片ID
+	for _, chunkId := range chunkIds {
+		content += chunkId + "\n"
+	}
+
+	// 将元数据作为文件上传到Telegram
+	fileData := TgFileData("blob", strings.NewReader(content))
+	mergedFileId := UpDocument(fileData)
+
+	if mergedFileId != "" {
+		log.Printf("合并文件元数据创建成功: %s, FileID: %s", fileName, mergedFileId)
+	} else {
+		log.Printf("合并文件元数据创建失败: %s", fileName)
+	}
+
+	return mergedFileId
+}

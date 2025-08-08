@@ -297,6 +297,52 @@
     background: #28a745;
 }
 
+/* 上传进度样式 */
+.upload-progress {
+    margin: 10px 0;
+    padding: 15px;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    border-left: 4px solid #007bff;
+}
+
+.progress-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.file-name {
+    font-weight: 500;
+    color: #333;
+    word-break: break-all;
+    flex: 1;
+    margin-right: 10px;
+}
+
+.progress-text {
+    color: #666;
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #e9ecef;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #007bff, #0056b3);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
 /* 响应式 */
 @media (max-width: 480px) {
     .main-container {
@@ -339,15 +385,31 @@
         border-left-color: #17a2b8;
         background: #f0f9ff;
     }
+    
+    .progress-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+    }
+    
+    .file-name {
+        margin-right: 0;
+    }
 }</style>
 
 <script>
+// 分片上传配置
+const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB per chunk
+const MAX_CONCURRENT_UPLOADS = 3; // 最大并发上传数
+
 // 拖拽上传功能
 document.addEventListener('DOMContentLoaded', function() {
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('uploadFile');
     const fileLabel = document.getElementById('uploadFileLabel');
     const uploadButton = document.getElementById('uploadButton');
+    const loading = document.getElementById('loading');
+    const response = document.getElementById('response');
     
     // 防止默认拖拽行为
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -366,6 +428,13 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 处理文件拖拽
     dropZone.addEventListener('drop', handleDrop, false);
+    
+    // 上传按钮点击事件
+    uploadButton.addEventListener('click', function() {
+        if (fileInput.files.length > 0) {
+            uploadFiles(fileInput.files);
+        }
+    });
     
     function preventDefaults(e) {
         e.preventDefault();
@@ -410,7 +479,7 @@ document.addEventListener('DOMContentLoaded', function() {
             uploadButton.style.background = '#28a745';
         } else {
             uploadButton.disabled = true;
-            uploadButton.textContent = '🪹 No file';
+            uploadButton.textContent = '🈳 No file';
             uploadButton.style.background = '#6c757d';
         }
     }
@@ -420,6 +489,252 @@ document.addEventListener('DOMContentLoaded', function() {
         updateFileLabel(this.files);
         updateUploadButton(this.files);
     });
+    
+    // 上传文件函数
+    async function uploadFiles(files) {
+        loading.style.display = 'block';
+        uploadButton.disabled = true;
+        
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            try {
+                if (file.size > CHUNK_SIZE) {
+                    await uploadLargeFile(file);
+                } else {
+                    await uploadSmallFile(file);
+                }
+            } catch (error) {
+                console.error('Upload failed:', error);
+                showResponse(`Upload failed for ${file.name}: ${error.message}`, false);
+            }
+        }
+        
+        loading.style.display = 'none';
+        uploadButton.disabled = false;
+        
+        // 重置文件选择
+        fileInput.value = '';
+        updateFileLabel([]);
+        updateUploadButton([]);
+    }
+    
+    // 上传小文件（<10MB）
+    async function uploadSmallFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch('/api', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.code === 1) {
+            showResponse(`File uploaded successfully: ${file.name}`, true, result);
+        } else {
+            throw new Error(result.message || 'Upload failed');
+        }
+    }
+    
+    // 上传大文件（>=10MB）- 分片上传
+    async function uploadLargeFile(file) {
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        const uploadId = generateUploadId();
+        const chunkIds = [];
+        
+        // 创建进度显示
+        const progressDiv = createProgressDisplay(file.name, totalChunks);
+        
+        try {
+            // 并发上传分片
+            const uploadPromises = [];
+            const semaphore = new Semaphore(MAX_CONCURRENT_UPLOADS);
+            
+            for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+                const promise = semaphore.acquire().then(async (release) => {
+                    try {
+                        const start = chunkIndex * CHUNK_SIZE;
+                        const end = Math.min(start + CHUNK_SIZE, file.size);
+                        const chunk = file.slice(start, end);
+                        
+                        const chunkId = await uploadChunk(chunk, chunkIndex, uploadId, file.name);
+                        chunkIds[chunkIndex] = chunkId;
+                        
+                        // 更新进度
+                        updateProgress(progressDiv, chunkIndex + 1, totalChunks);
+                        
+                        return chunkId;
+                    } finally {
+                        release();
+                    }
+                });
+                uploadPromises.push(promise);
+            }
+            
+            await Promise.all(uploadPromises);
+            
+            // 合并分片
+            const result = await mergeChunks(uploadId, file.name, chunkIds, file.size);
+            
+            if (result.code === 1) {
+                progressDiv.remove();
+                showResponse(`Large file uploaded successfully: ${file.name}`, true, result);
+            } else {
+                throw new Error(result.message || 'Merge failed');
+            }
+            
+        } catch (error) {
+            progressDiv.remove();
+            throw error;
+        }
+    }
+    
+    // 上传单个分片
+    async function uploadChunk(chunk, chunkIndex, uploadId, fileName) {
+        const formData = new FormData();
+        formData.append('file', chunk, `${fileName}.chunk.${chunkIndex}`);
+        formData.append('chunkIndex', chunkIndex);
+        formData.append('uploadId', uploadId);
+        formData.append('fileName', fileName);
+        
+        const response = await fetch('/api/chunk', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.code === 1) {
+            return result.chunkId;
+        } else {
+            throw new Error(result.message || 'Chunk upload failed');
+        }
+    }
+    
+    // 合并分片
+    async function mergeChunks(uploadId, fileName, chunkIds, fileSize) {
+        const response = await fetch('/api/merge', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                uploadId: uploadId,
+                fileName: fileName,
+                chunkIds: chunkIds,
+                fileSize: fileSize
+            })
+        });
+        
+        return await response.json();
+    }
+    
+    // 生成上传ID
+    function generateUploadId() {
+        return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    }
+    
+    // 创建进度显示
+    function createProgressDisplay(fileName, totalChunks) {
+        const progressDiv = document.createElement('div');
+        progressDiv.className = 'upload-progress';
+        progressDiv.innerHTML = `
+            <div class="progress-info">
+                <span class="file-name">${fileName}</span>
+                <span class="progress-text">0/${totalChunks} chunks</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: 0%"></div>
+            </div>
+        `;
+        response.appendChild(progressDiv);
+        return progressDiv;
+    }
+    
+    // 更新进度
+    function updateProgress(progressDiv, completed, total) {
+        const progressText = progressDiv.querySelector('.progress-text');
+        const progressFill = progressDiv.querySelector('.progress-fill');
+        
+        const percentage = (completed / total) * 100;
+        progressText.textContent = `${completed}/${total} chunks`;
+        progressFill.style.width = `${percentage}%`;
+    }
+    
+    // 显示响应结果
+    function showResponse(message, isSuccess, result = null) {
+        console.log(result)
+        const responseDiv = document.createElement('div');
+        responseDiv.className = `response-item ${isSuccess ? 'response-success' : 'response-error'}`;
+        
+        let content = `<div class="file-info">${message}</div>`;
+        
+        if (isSuccess && result) {
+            if (result.shortFileUrl) {
+                content += `<div class="file-link"><a href="${result.shortFileUrl}" target="_blank">${result.shortFileUrl}</a></div>`;
+            }
+            content += '<div class="copy-links">';
+        
+            if (result.shortFileUrl) {
+                content += `<button class="copy-code" data-clipboard-text="${result.shortFileUrl}">Copy Link</button>`;
+            }
+            content += '</div>';
+        }
+        
+        responseDiv.innerHTML = content;
+        response.appendChild(responseDiv);
+        
+        // 添加复制功能
+        responseDiv.querySelectorAll('.copy-code').forEach(button => {
+            button.addEventListener('click', function() {
+                const text = this.getAttribute('data-clipboard-text');
+                navigator.clipboard.writeText(text).then(() => {
+                    const originalText = this.textContent;
+                    this.textContent = 'Copied!';
+                    this.classList.add('copied');
+                    setTimeout(() => {
+                        this.textContent = originalText;
+                        this.classList.remove('copied');
+                    }, 2000);
+                });
+            });
+        });
+        
+        // 滚动到最新响应
+        responseDiv.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    // 信号量实现，用于控制并发数
+    class Semaphore {
+        constructor(max) {
+            this.max = max;
+            this.current = 0;
+            this.queue = [];
+        }
+        
+        acquire() {
+            return new Promise((resolve) => {
+                if (this.current < this.max) {
+                    this.current++;
+                    resolve(() => this.release());
+                } else {
+                    this.queue.push(() => {
+                        this.current++;
+                        resolve(() => this.release());
+                    });
+                }
+            });
+        }
+        
+        release() {
+            this.current--;
+            if (this.queue.length > 0) {
+                const next = this.queue.shift();
+                next();
+            }
+        }
+    }
 });
 </script>
 

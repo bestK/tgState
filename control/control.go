@@ -405,6 +405,149 @@ func ShortLinksAPI(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// ChunkUploadAPI 分片上传API
+func ChunkUploadAPI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 获取上传的分片文件
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		errJsonMsg("Unable to get chunk file", w)
+		return
+	}
+	defer file.Close()
+
+	chunkIndex := r.FormValue("chunkIndex")
+	uploadId := r.FormValue("uploadId")
+	fileName := r.FormValue("fileName")
+
+	if chunkIndex == "" || uploadId == "" || fileName == "" {
+		errJsonMsg("Missing required parameters", w)
+		return
+	}
+
+	// 上传分片到Telegram
+	chunkFileName := fmt.Sprintf("%s.chunk.%s", fileName, chunkIndex)
+	chunkId := utils.UpDocument(utils.TgFileData(chunkFileName, file))
+
+	if chunkId == "" {
+		errJsonMsg("Failed to upload chunk", w)
+		return
+	}
+
+	// 保存分片信息到数据库
+	ip := r.RemoteAddr
+	err = SaveChunkRecord(uploadId, chunkIndex, chunkId, fileName, ip)
+	if err != nil {
+		errJsonMsg("Failed to save chunk record", w)
+		return
+	}
+
+	response := conf.UploadResponse{
+		Code:    1,
+		Message: "Chunk uploaded successfully",
+		ChunkId: chunkId,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+// MergeChunksAPI 合并分片API
+func MergeChunksAPI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		UploadId string   `json:"uploadId"`
+		FileName string   `json:"fileName"`
+		ChunkIds []string `json:"chunkIds"`
+		FileSize int64    `json:"fileSize"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errJsonMsg("Invalid request body", w)
+		return
+	}
+
+	if req.UploadId == "" || req.FileName == "" || len(req.ChunkIds) == 0 {
+		errJsonMsg("Missing required parameters", w)
+		return
+	}
+
+	// 创建合并文件的元数据
+	mergedFileId := utils.CreateMergedFile(req.FileName, req.ChunkIds, req.FileSize)
+	if mergedFileId == "" {
+		errJsonMsg("Failed to create merged file", w)
+		return
+	}
+
+	// 保存文件记录
+	ip := r.RemoteAddr
+	err := SaveFileRecord(mergedFileId, req.FileName, ip)
+	if err != nil {
+		errJsonMsg("Failed to save file record", w)
+		return
+	}
+
+	// 生成短链
+	downloadUrl := conf.FileRoute + mergedFileId
+	shortUrl := ""
+
+	var shortCode string
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		shortCode = utils.GenerateShortCode(6)
+		if !ShortCodeExists(shortCode) {
+			break
+		}
+		if i == maxRetries-1 {
+			log.Printf("Failed to generate unique short code after %d retries", maxRetries)
+			shortCode = ""
+		}
+	}
+
+	if shortCode != "" {
+		err := CreateShortLink(shortCode, mergedFileId)
+		if err != nil {
+			log.Printf("Failed to create short link: %v", err)
+		} else {
+			shortUrl = "/s/" + shortCode
+		}
+	}
+
+	imageUrl := strings.TrimSuffix(conf.BaseUrl, "/") + downloadUrl
+	shortImageUrl := strings.TrimSuffix(conf.BaseUrl, "/") + shortUrl
+	proxyUrl := conf.ProxyUrl + "/" + url.QueryEscape(imageUrl)
+
+	response := conf.UploadResponse{
+		Code:         1,
+		Message:      downloadUrl,
+		ImgUrl:       imageUrl,
+		ProxyUrl:     proxyUrl,
+		ShortUrl:     shortUrl,
+		ShortFileUrl: shortImageUrl,
+		Name:         req.FileName,
+	}
+
+	// 清理分片记录
+	go CleanupChunkRecords(req.UploadId)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
 func errJsonMsg(msg string, w http.ResponseWriter) {
 	// 这里示例直接返回JSON响应
 	response := conf.UploadResponse{

@@ -59,6 +59,8 @@ func web() {
 			http.HandleFunc("/pwd", control.Pwd)
 		}
 		http.HandleFunc("/api", control.Middleware(control.UploadAPI))
+		http.HandleFunc("/api/chunk", control.Middleware(control.ChunkUploadAPI))
+		http.HandleFunc("/api/merge", control.Middleware(control.MergeChunksAPI))
 		http.HandleFunc("/files", control.Middleware(control.FilesAPI))
 		http.HandleFunc("/shortlinks", control.Middleware(control.ShortLinksAPI))
 		http.HandleFunc("/", control.Middleware(control.Index))

@@ -223,16 +223,7 @@
                         .css("background-color", "#007BFF");
                 }
             });
-            $("#uploadButton").click(function () {
-                var input = document.getElementById("uploadFile");
-                if (input.files.length > 0) {
-                    for (var i = 0; i < input.files.length; i++) {
-                        readAndUploadFile(input.files[i]);
-                    }
-                } else {
-                    alert("No file!");
-                }
-            });
+            // 上传按钮点击事件已在files.tmpl中处理，这里不再重复绑定
         });
 </script>
 
