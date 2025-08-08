@@ -328,6 +328,13 @@
     white-space: nowrap;
 }
 
+.progress-status {
+    color: #007bff;
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+    font-style: italic;
+}
+
 .progress-bar {
     width: 100%;
     height: 8px;
@@ -340,7 +347,34 @@
     height: 100%;
     background: linear-gradient(90deg, #007bff, #0056b3);
     border-radius: 4px;
-    transition: width 0.3s ease;
+    transition: width 0.2s ease-out;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.3),
+        transparent
+    );
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
 }
 
 /* 响应式 */
@@ -520,21 +554,88 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 上传小文件（<10MB）
     async function uploadSmallFile(file) {
-        const formData = new FormData();
-        formData.append('file', file);
+        // 创建进度显示
+        const progressDiv = createProgressDisplay(file.name, 1);
         
-        const response = await fetch('/api', {
-            method: 'POST',
-            body: formData
-        });
-        
-        const result = await response.json();
-        
-        if (result.code === 1) {
-            showResponse(`File uploaded successfully: ${file.name}`, true, result);
-        } else {
-            throw new Error(result.message || 'Upload failed');
+        try {
+            await uploadSmallFileWithProgress(file, progressDiv);
+        } catch (error) {
+            progressDiv.remove();
+            throw error;
         }
+    }
+    
+    // 带进度的小文件上传
+    function uploadSmallFileWithProgress(file, progressDiv) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const progressText = progressDiv.querySelector('.progress-text');
+            const progressFill = progressDiv.querySelector('.progress-fill');
+            const progressStatus = progressDiv.querySelector('.progress-status');
+            
+            // 监听上传进度
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percentage = Math.round((e.loaded / e.total) * 100);
+                    progressText.textContent = `${percentage}%`;
+                    progressFill.style.width = `${percentage}%`;
+                    
+                    if (percentage < 100) {
+                        progressStatus.textContent = 'Uploading...';
+                    }
+                }
+            });
+            
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 200) {
+                    try {
+                        const result = JSON.parse(xhr.responseText);
+                        if (result.code === 1) {
+                            // 显示完成状态
+                            progressText.textContent = '100%';
+                            progressFill.style.width = '100%';
+                            progressStatus.textContent = 'Upload complete!';
+                            
+                            // 延迟一下再移除进度条，让用户看到100%
+                            setTimeout(() => {
+                                progressDiv.remove();
+                                showResponse(`uploaded successfully: ${file.name}`, true, result);
+                                resolve();
+                            }, 500);
+                        } else {
+                            reject(new Error(result.message || 'Upload failed'));
+                        }
+                    } catch (error) {
+                        reject(new Error('Invalid response format'));
+                    }
+                } else {
+                    reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+                }
+            });
+            
+            xhr.addEventListener('error', () => {
+                progressStatus.textContent = 'Upload failed';
+                progressFill.style.background = '#dc3545';
+                reject(new Error('Network error during upload'));
+            });
+            
+            xhr.addEventListener('timeout', () => {
+                progressStatus.textContent = 'Upload timeout';
+                progressFill.style.background = '#dc3545';
+                reject(new Error('Upload timeout'));
+            });
+            
+            // 初始状态
+            progressStatus.textContent = 'Starting upload...';
+            progressText.textContent = '0%';
+            progressFill.style.width = '0%';
+            
+            xhr.open('POST', '/api');
+            xhr.send(formData);
+        });
     }
     
     // 上传大文件（>=10MB）- 分片上传
@@ -543,8 +644,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const uploadId = generateUploadId();
         const chunkIds = [];
         
-        // 创建进度显示
+        // 创建进度显示和跟踪器
         const progressDiv = createProgressDisplay(file.name, totalChunks);
+        const progressTracker = new ProgressTracker(totalChunks, progressDiv);
         
         try {
             // 并发上传分片
@@ -558,11 +660,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         const end = Math.min(start + CHUNK_SIZE, file.size);
                         const chunk = file.slice(start, end);
                         
-                        const chunkId = await uploadChunk(chunk, chunkIndex, uploadId, file.name);
+                        const chunkId = await uploadChunkWithProgress(
+                            chunk, 
+                            chunkIndex, 
+                            uploadId, 
+                            file.name, 
+                            progressTracker
+                        );
                         chunkIds[chunkIndex] = chunkId;
-                        
-                        // 更新进度
-                        updateProgress(progressDiv, chunkIndex + 1, totalChunks);
                         
                         return chunkId;
                     } finally {
@@ -574,12 +679,24 @@ document.addEventListener('DOMContentLoaded', function() {
             
             await Promise.all(uploadPromises);
             
+            // 确保所有分块都显示为100%完成
+            progressTracker.forceUpdate();
+            
+            // 显示合并状态
+            progressTracker.setStatus('Merging chunks...');
+            
             // 合并分片
             const result = await mergeChunks(uploadId, file.name, chunkIds, file.size);
             
             if (result.code === 1) {
-                progressDiv.remove();
-                showResponse(`Large file uploaded successfully: ${file.name}`, true, result);
+                // 显示完成状态
+                progressTracker.setStatus('Upload complete!');
+                
+                // 延迟一下再移除进度条，让用户看到100%
+                setTimeout(() => {
+                    progressDiv.remove();
+                    showResponse(`uploaded successfully: ${file.name}`, true, result);
+                }, 500);
             } else {
                 throw new Error(result.message || 'Merge failed');
             }
@@ -590,7 +707,57 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // 上传单个分片
+    // 上传单个分片（带进度跟踪）
+    async function uploadChunkWithProgress(chunk, chunkIndex, uploadId, fileName, progressTracker) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const formData = new FormData();
+            
+            formData.append('file', chunk, `${fileName}.chunk.${chunkIndex}`);
+            formData.append('chunkIndex', chunkIndex);
+            formData.append('uploadId', uploadId);
+            formData.append('fileName', fileName);
+            
+            // 监听上传进度
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const chunkProgress = (e.loaded / e.total) * 100;
+                    progressTracker.updateChunkProgress(chunkIndex, chunkProgress);
+                }
+            });
+            
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 200) {
+                    try {
+                        const result = JSON.parse(xhr.responseText);
+                        if (result.code === 1) {
+                            progressTracker.updateChunkProgress(chunkIndex, 100);
+                            resolve(result.chunkId);
+                        } else {
+                            reject(new Error(result.message || 'Chunk upload failed'));
+                        }
+                    } catch (error) {
+                        reject(new Error('Invalid response format'));
+                    }
+                } else {
+                    reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+                }
+            });
+            
+            xhr.addEventListener('error', () => {
+                reject(new Error('Network error during chunk upload'));
+            });
+            
+            xhr.addEventListener('timeout', () => {
+                reject(new Error('Chunk upload timeout'));
+            });
+            
+            xhr.open('POST', '/api/chunk');
+            xhr.send(formData);
+        });
+    }
+    
+    // 上传单个分片（兼容性保留）
     async function uploadChunk(chunk, chunkIndex, uploadId, fileName) {
         const formData = new FormData();
         formData.append('file', chunk, `${fileName}.chunk.${chunkIndex}`);
@@ -642,8 +809,9 @@ document.addEventListener('DOMContentLoaded', function() {
         progressDiv.innerHTML = `
             <div class="progress-info">
                 <span class="file-name">${fileName}</span>
-                <span class="progress-text">0/${totalChunks} chunks</span>
+                <span class="progress-text">0%</span>
             </div>
+            <div class="progress-status">Uploading...</div>
             <div class="progress-bar">
                 <div class="progress-fill" style="width: 0%"></div>
             </div>
@@ -653,13 +821,22 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // 更新进度
-    function updateProgress(progressDiv, completed, total) {
+    function updateProgress(progressDiv, completed, total, status = null) {
         const progressText = progressDiv.querySelector('.progress-text');
         const progressFill = progressDiv.querySelector('.progress-fill');
+        const progressStatus = progressDiv.querySelector('.progress-status');
         
-        const percentage = (completed / total) * 100;
-        progressText.textContent = `${completed}/${total} chunks`;
+        const percentage = Math.round((completed / total) * 100);
+        progressText.textContent = `${percentage}%`;
         progressFill.style.width = `${percentage}%`;
+        
+        if (status) {
+            progressStatus.textContent = status;
+        } else if (percentage === 100) {
+            progressStatus.textContent = 'Processing...';
+        } else {
+            progressStatus.textContent = 'Uploading...';
+        }
     }
     
     // 显示响应结果
@@ -703,6 +880,127 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // 滚动到最新响应
         responseDiv.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    // 进度跟踪器类
+    class ProgressTracker {
+        constructor(totalChunks, progressDiv) {
+            this.totalChunks = totalChunks;
+            this.progressDiv = progressDiv;
+            this.chunkProgress = new Array(totalChunks).fill(0);
+            this.lastUpdateTime = 0;
+            this.updateThrottle = 100; // 限制更新频率为100ms
+            this.startTime = Date.now();
+            this.lastProgress = 0;
+            this.progressHistory = [];
+        }
+        
+        updateChunkProgress(chunkIndex, progress) {
+            this.chunkProgress[chunkIndex] = progress;
+            
+            // 节流更新，避免过于频繁的DOM操作
+            const now = Date.now();
+            if (now - this.lastUpdateTime > this.updateThrottle) {
+                this.updateDisplay();
+                this.lastUpdateTime = now;
+            }
+        }
+        
+        updateDisplay() {
+            const totalProgress = this.chunkProgress.reduce((sum, progress) => sum + progress, 0);
+            const overallProgress = totalProgress / this.totalChunks;
+            
+            const progressText = this.progressDiv.querySelector('.progress-text');
+            const progressFill = this.progressDiv.querySelector('.progress-fill');
+            
+            const percentage = Math.round(overallProgress);
+            
+            // 更新进度显示
+            progressText.textContent = `${percentage}%`;
+            progressFill.style.width = `${percentage}%`;
+            
+            // 记录进度历史用于速度计算
+            const now = Date.now();
+            this.progressHistory.push({
+                time: now,
+                progress: percentage
+            });
+            
+            // 只保留最近5秒的历史记录
+            this.progressHistory = this.progressHistory.filter(
+                record => now - record.time < 5000
+            );
+            
+            // 更新状态文本（如果不是在合并阶段）
+            const progressStatus = this.progressDiv.querySelector('.progress-status');
+            if (progressStatus && !progressStatus.textContent.includes('Merging')) {
+                if (percentage < 100) {
+                    const speed = this.calculateSpeed();
+                    const eta = this.calculateETA(percentage, speed);
+                    
+                    if (speed > 0 && eta > 0) {
+                        progressStatus.textContent = `Uploading... (${this.formatSpeed(speed)}, ETA: ${this.formatTime(eta)})`;
+                    } else {
+                        progressStatus.textContent = 'Uploading...';
+                    }
+                } else {
+                    progressStatus.textContent = 'Processing...';
+                }
+            }
+            
+            this.lastProgress = percentage;
+        }
+        
+        calculateSpeed() {
+            if (this.progressHistory.length < 2) return 0;
+            
+            const recent = this.progressHistory[this.progressHistory.length - 1];
+            const older = this.progressHistory[0];
+            
+            const timeDiff = (recent.time - older.time) / 1000; // 秒
+            const progressDiff = recent.progress - older.progress;
+            
+            return progressDiff / timeDiff; // 百分比/秒
+        }
+        
+        calculateETA(currentProgress, speed) {
+            if (speed <= 0 || currentProgress >= 100) return 0;
+            
+            const remainingProgress = 100 - currentProgress;
+            return remainingProgress / speed; // 秒
+        }
+        
+        formatSpeed(speed) {
+            return `${speed.toFixed(1)}%/s`;
+        }
+        
+        formatTime(seconds) {
+            if (seconds < 60) {
+                return `${Math.round(seconds)}s`;
+            } else if (seconds < 3600) {
+                const minutes = Math.floor(seconds / 60);
+                const remainingSeconds = Math.round(seconds % 60);
+                return `${minutes}m ${remainingSeconds}s`;
+            } else {
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                return `${hours}h ${minutes}m`;
+            }
+        }
+        
+        setStatus(status) {
+            const progressStatus = this.progressDiv.querySelector('.progress-status');
+            if (progressStatus) {
+                progressStatus.textContent = status;
+            }
+        }
+        
+        // 强制更新显示（用于最终状态）
+        forceUpdate() {
+            // 确保所有分块都是100%
+            this.chunkProgress.fill(100);
+            this.updateDisplay();
+        }
     }
     
     // 信号量实现，用于控制并发数
