@@ -64,7 +64,7 @@ func UploadAPI(w http.ResponseWriter, r *http.Request) {
 			Message: "error",
 		}
 		fileId := utils.UpDocument(utils.TgFileData(fileName, file))
-		if "blob" != fileName {
+		if fileName != "blob" {
 			ip := r.RemoteAddr // 获取上传者IP
 			// 插入数据到数据库
 			err := SaveFileRecord(fileId, fileName, ip)
@@ -74,15 +74,43 @@ func UploadAPI(w http.ResponseWriter, r *http.Request) {
 		}
 
 		downloadUrl := conf.FileRoute + fileId
+		shortUrl := ""
 		if downloadUrl != conf.FileRoute {
+			// 生成唯一的短链码
+			var shortCode string
+			maxRetries := 10
+			for i := 0; i < maxRetries; i++ {
+				shortCode = utils.GenerateShortCode(6)
+				if !ShortCodeExists(shortCode) {
+					break
+				}
+				if i == maxRetries-1 {
+					log.Printf("Failed to generate unique short code after %d retries", maxRetries)
+					shortCode = ""
+				}
+			}
+
+			if shortCode != "" {
+				err := CreateShortLink(shortCode, fileId)
+				if err != nil {
+					log.Printf("Failed to create short link: %v", err)
+				} else {
+					shortUrl = "/s/" + shortCode
+				}
+			}
+
 			imageUrl := strings.TrimSuffix(conf.BaseUrl, "/") + downloadUrl
+			shortImageUrl := strings.TrimSuffix(conf.BaseUrl, "/") + shortUrl
 			// url encode imageUrl
 			proxyUrl := conf.ProxyUrl + "/" + url.QueryEscape(imageUrl)
 			res = conf.UploadResponse{
-				Code:     1,
-				Message:  downloadUrl,
-				ImgUrl:   imageUrl,
-				ProxyUrl: proxyUrl,
+				Code:         1,
+				Message:      downloadUrl,
+				ImgUrl:       imageUrl,
+				ProxyUrl:     proxyUrl,
+				ShortUrl:     shortUrl,
+				ShortFileUrl: shortImageUrl,
+				Name:         fileName,
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -93,6 +121,28 @@ func UploadAPI(w http.ResponseWriter, r *http.Request) {
 
 	// 如果不是POST请求，返回错误响应
 	http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+}
+
+// S 短链重定向
+func S(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	shortCode := strings.TrimPrefix(path, "/s/")
+	if shortCode == "" {
+		w.WriteHeader(http.StatusNotFound)
+		errJsonMsg("404 Not Found", w)
+		return
+	}
+
+	// 通过短链码获取文件ID
+	fileId, err := GetFileIdByShortCode(shortCode)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		errJsonMsg("Short link not found", w)
+		return
+	}
+
+	// 重定向到原始文件链接
+	http.Redirect(w, r, conf.FileRoute+fileId, http.StatusFound)
 }
 
 // D 下载文件
@@ -175,10 +225,17 @@ func D(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// 使用DetectContentType函数检测文件类型
-		w.Header().Set("Content-Type", http.DetectContentType(buffer))
+		contentType := http.DetectContentType(buffer)
+		w.Header().Set("Content-Type", contentType)
 
+		// 设置文件名，优先使用数据库中的原始文件名
 		if err == nil && record.Filename != "" {
-			w.Header().Set("Content-Disposition", "attachment; filename=\""+record.Filename+"\"")
+			// 对文件名进行URL编码以处理特殊字符
+			encodedFilename := url.QueryEscape(record.Filename)
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", record.Filename, encodedFilename))
+		} else {
+			// 如果没有找到记录，使用默认的文件名
+			w.Header().Set("Content-Disposition", "attachment")
 		}
 
 		_, err = w.Write(buffer[:n])
@@ -317,6 +374,34 @@ func FilesAPI(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+// ShortLinksAPI 短链统计API
+func ShortLinksAPI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	password := r.URL.Query().Get("password")
+	response := conf.ResponseResult{
+		Code:    0,
+		Message: "ok",
+	}
+
+	if conf.ApiPass != "" && password != conf.ApiPass {
+		response.Message = "Unauthorized"
+		response.Code = http.StatusUnauthorized
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	shortLinks, err := GetAllShortLinks()
+	response.Data = shortLinks
+	if err != nil {
+		response.Message = "Failed to get short links"
+		w.WriteHeader(http.StatusInternalServerError)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
 	json.NewEncoder(w).Encode(response)
 }
 

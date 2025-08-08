@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"sync"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var (
@@ -36,6 +37,19 @@ func InitDB() (*sql.DB, error) {
 		if err != nil {
 			log.Fatal("Failed to create table:", err)
 		}
+
+		// 创建短链表
+		shortLinkQuery := `CREATE TABLE IF NOT EXISTS short_links (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			short_code TEXT UNIQUE NOT NULL,
+			file_id TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			access_count INTEGER DEFAULT 0
+		);`
+		_, err = db.Exec(shortLinkQuery)
+		if err != nil {
+			log.Fatal("Failed to create short_links table:", err)
+		}
 	})
 
 	return db, err
@@ -46,6 +60,14 @@ type FileRecord struct {
 	Filename string    `json:"filename"`
 	Ip       string    `json:"ip"`
 	Time     time.Time `json:"time"`
+}
+
+type ShortLink struct {
+	ID          int       `json:"id"`
+	ShortCode   string    `json:"shortCode"`
+	FileId      string    `json:"fileId"`
+	CreatedAt   time.Time `json:"createdAt"`
+	AccessCount int       `json:"accessCount"`
 }
 
 // GetFileNameByIDOrName 查询文件名
@@ -96,4 +118,72 @@ func SelectAllRecord() ([]FileRecord, error) {
 	}
 
 	return records, nil
+}
+
+// CreateShortLink 创建短链
+func CreateShortLink(shortCode, fileId string) error {
+	_, err := db.Exec("INSERT INTO short_links (short_code, file_id) VALUES (?, ?)", shortCode, fileId)
+	return err
+}
+
+// ShortCodeExists 检查短链码是否已存在
+func ShortCodeExists(shortCode string) bool {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM short_links WHERE short_code = ?", shortCode).Scan(&count)
+	return err == nil && count > 0
+}
+
+// GetAllShortLinks 获取所有短链
+func GetAllShortLinks() ([]ShortLink, error) {
+	rows, err := db.Query("SELECT id, short_code, file_id, created_at, access_count FROM short_links ORDER BY created_at DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var shortLinks []ShortLink
+	for rows.Next() {
+		var link ShortLink
+		err := rows.Scan(&link.ID, &link.ShortCode, &link.FileId, &link.CreatedAt, &link.AccessCount)
+		if err != nil {
+			return nil, err
+		}
+		shortLinks = append(shortLinks, link)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return shortLinks, nil
+}
+
+// GetFileIdByShortCode 通过短链码获取文件ID
+func GetFileIdByShortCode(shortCode string) (string, error) {
+	var fileId string
+	err := db.QueryRow("SELECT file_id FROM short_links WHERE short_code = ?", shortCode).Scan(&fileId)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("short link not found: %s", shortCode)
+		}
+		return "", err
+	}
+
+	// 增加访问计数
+	_, _ = db.Exec("UPDATE short_links SET access_count = access_count + 1 WHERE short_code = ?", shortCode)
+
+	return fileId, nil
+}
+
+// GetShortCodeByFileId 通过文件ID获取短链码
+func GetShortCodeByFileId(fileId string) (string, error) {
+	var shortCode string
+	err := db.QueryRow("SELECT short_code FROM short_links WHERE file_id = ?", fileId).Scan(&shortCode)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("short link not found for file: %s", fileId)
+		}
+		return "", err
+	}
+	return shortCode, nil
 }

@@ -28,3 +28,5 @@ tmp/*
 /.env
 /files.db
 /tgState.zip
+
+__debug_bin.exe*

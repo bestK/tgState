@@ -10,10 +10,13 @@ var AllowedExts string
 var ProxyUrl string
 
 type UploadResponse struct {
-	Code     int    `json:"code"`
-	Message  string `json:"message"`
-	ImgUrl   string `json:"url"`
-	ProxyUrl string `json:"proxyUrl"`
+	Code         int    `json:"code"`
+	Message      string `json:"message"`
+	ImgUrl       string `json:"url"`
+	ProxyUrl     string `json:"proxyUrl"`
+	ShortUrl     string `json:"shortUrl"`
+	ShortFileUrl string `json:"shortFileUrl"`
+	Name         string `json:"name"`
 }
 
 type ResponseResult struct {

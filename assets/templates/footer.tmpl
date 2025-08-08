@@ -3,7 +3,7 @@
     function uploadFile(file) {
         var limit = 10 * 1024 * 1024;
         if (file.size <= limit) {
-            uploadImg(file, 1).then((url) => {
+            uploadImg(file, 1, file.name).then((url) => {
                 // 处理上传成功的情况
                 console.log(url);
             }).catch((error) => {
@@ -18,7 +18,7 @@
             function uploadNextChunk() {
                 if (start < file.size) {
                     var chunk = file.slice(start, end);
-                    return uploadImg(chunk, 0)
+                    return uploadImg(chunk, 0, file.name)
                         .then((url) => {
                             // 处理上传成功的情况
                             temp = temp + '\n' + url.replace(/^\/d\//, ''); // 每次改变值都换行
@@ -47,7 +47,7 @@
                     // 将字符串转换为 Blob 对象
                     var blob = new Blob([temp], { type: 'text/plain' });
                     var fileAll = new File([blob], 'fileAll.txt', { type: 'text/plain' });
-                    return uploadImg(fileAll, 1);
+                    return uploadImg(fileAll, 1, file.name);
                 })
                 .catch((error) => {
                     // 处理上传失败的情况
@@ -55,13 +55,14 @@
                 });
         }
     }
-    function uploadImg(e, ms) {
+    function uploadImg(e, ms, fileName) {
         return new Promise((resolve, reject) => {
             var o = new FormData();
             o.append("file", e);
             var isImage = e.type.startsWith('image/');
+            var displayFileName = fileName || e.name || 'Unknown file';
             $("#uploadButton").prop("disabled", !0);
-            $("#uploadButton").text("上传中");
+            $("#uploadButton").text("Uploading");
             $("#loading").show();
             var a = window.location.protocol + "//" + window.location.hostname;
             "80" !== window.location.port &&
@@ -75,101 +76,118 @@
                     processData: !1,
                     success: function (e) {
 
-                        var link = window.location.href + e.message;
+                        var link = window.location.href.replace(/\/$/, "") + e.message;
                         var proxyUrl = e.proxyUrl
                         var t;
                         if (e.code == 1) {
                             if (ms) {
+                                var shortLink = e.shortFileUrl ? window.location.href.replace(/\/$/, "") + e.shortUrl : '';
+                                var fileNameToShow = displayFileName;
+                                
                                 if (isImage) {
-                                    t = $(
-                                        '<div class="response-item response-success">上传成功，图片外链：<a target="_blank" href="' +
-                                        link +
-                                        '">' +
-                                        link +
-                                        '</a><div class="copy-links"><span class="copy-code" data-clipboard-text="&lt;img src=&quot;' +
-                                        link +
-                                        '&quot; alt=&quot;Your Alt Text&quot;&gt;">HTML</span><span class="copy-code" data-clipboard-text="![Alt Text](' +
-                                        link +
-                                        ')">Markdown</span><span class="copy-code" data-clipboard-text="[img]' +
-                                        link +
-                                        '[/img]">BBCode</span></div></div>'+
-                                        '<div class="response-item response-success">上传成功，代理图片外链：<a target="_blank" href="' +
-                                        proxyUrl +
-                                        '">' +
-                                        proxyUrl +
-                                        '</a><div class="copy-links"><span class="copy-code" data-clipboard-text="&lt;img src=&quot;' +
-                                        proxyUrl +
-                                        '&quot; alt=&quot;Your Alt Text&quot;&gt;">HTML</span><span class="copy-code" data-clipboard-text="![Alt Text](' +
-                                        proxyUrl +
-                                        ')">Markdown</span><span class="copy-code" data-clipboard-text="[img]' +
-                                        link +
-                                        '[/img]">BBCode</span></div></div>'
-                                    );
+                                    var shortLinkHtml = shortLink ? 
+                                        '<div class="response-item response-success">' +
+                                        '<div class="file-info">✅ <strong>' + fileNameToShow + '</strong></div>' +
+                                        '<div class="file-link"><a target="_blank" href="' + shortLink + '">' + shortLink + '</a></div>' +
+                                        '<div class="copy-links">' +
+                                        '<span class="copy-code" data-clipboard-text="' + shortLink + '">Copy Link</span>' +
+                                        '<span class="copy-code" data-clipboard-text="&lt;img src=&quot;' + shortLink + '&quot; alt=&quot;' + fileNameToShow + '&quot;&gt;">HTML</span>' +
+                                        '<span class="copy-code" data-clipboard-text="![' + fileNameToShow + '](' + shortLink + ')">Markdown</span>' +
+                                        '</div></div>' : '';
+                                    
+                                    t = $(shortLinkHtml);
                                 } else {
-                                    t = $(
-                                        '<div class="response-item response-success">上传成功，文件外链：<a target="_blank" href="' +
-                                        link +
-                                        '">' +
-                                        link +
-                                        "</a></div>" +
-                                         '<div class="response-item response-success">上传成功，代理文件外链：<a target="_blank" href="' +
-                                          proxyUrl +
-                                          '">' +
-                                          proxyUrl +
-                                          "</a></div>"
-                                    )
+                                    var shortLinkHtml = shortLink ? 
+                                        '<div class="response-item response-success">' +
+                                        '<div class="file-info">✅ <strong>' + fileNameToShow + '</strong></div>' +
+                                        '<div class="file-link"><a target="_blank" href="' + shortLink + '">' + shortLink + '</a></div>' +
+                                        '<div class="copy-links">' +
+                                        '<span class="copy-code" data-clipboard-text="' + shortLink + '">Copy Link</span>' +
+                                        '</div></div>' : '';
+                                    
+                                    t = $(shortLinkHtml);
                                 }
                             }
                             resolve(e.message);
                         } else {
-                            var t = $('<div class="response-item response-error">上传失败(' + e.message + ')</div>');
-                            reject("上传失败(" + e.message + ")");
+                            var t = $('<div class="response-item response-error">Upload failed (' + e.message + ')</div>');
+                            reject("Upload failed (" + e.message + ")");
                         }
                         $("#response").prepend(t);
                         $("#uploadFile").val("");
                         $("#uploadFileLabel")
-                            .text("选择文件")
+                            .text("Choose Files")
                             .css("background-color", "#007BFF");
+                        
+                        // 重置上传按钮状态
+                        $("#uploadButton").prop("disabled", true);
+                        $("#uploadButton").text("⬆️ Please select files first");
 
                         $(".copy-code").click(function () {
                             var code = $(this).data("clipboard-text");
-                            var input = $("<input>");
-                            $("body").append(input);
-                            input.val(code).select();
-                            document.execCommand("copy");
-                            input.remove();
                             var copyButton = $(this);
                             var originalText = copyButton.text();
-                            copyButton.text("复制成功");
-                            setTimeout(function () {
-                                copyButton.text(originalText);
-                            }, 1000);
+                            
+                            // 使用现代的 Clipboard API，如果不支持则回退到旧方法
+                            if (navigator.clipboard && window.isSecureContext) {
+                                navigator.clipboard.writeText(code).then(function() {
+                                    copyButton.text("Copied!").addClass("copied");
+                                    setTimeout(function () {
+                                        copyButton.text(originalText).removeClass("copied");
+                                    }, 1500);
+                                }).catch(function() {
+                                    // 如果 Clipboard API 失败，使用旧方法
+                                    fallbackCopy(code, copyButton, originalText);
+                                });
+                            } else {
+                                // 使用旧的复制方法
+                                fallbackCopy(code, copyButton, originalText);
+                            }
                         });
+                        
+                        function fallbackCopy(text, button, originalText) {
+                            var input = $("<input>");
+                            $("body").append(input);
+                            input.val(text).select();
+                            try {
+                                document.execCommand("copy");
+                                button.text("Copied!").addClass("copied");
+                                setTimeout(function () {
+                                    button.text(originalText).removeClass("copied");
+                                }, 1500);
+                            } catch (err) {
+                                button.text("Copy failed");
+                                setTimeout(function () {
+                                    button.text(originalText);
+                                }, 1500);
+                            }
+                            input.remove();
+                        }
                         return e.message;
                     },
                     error: function () {
-                        var errorResponse = $('<div class="response-item response-error">上传失败</div>');
+                        var errorResponse = $('<div class="response-item response-error">Upload failed</div>');
                         $("#response").prepend(errorResponse);
-                        reject("上传失败");
+                        reject("Upload failed");
                     },
                     complete: function () {
-                        $("#uploadButton").prop("disabled", !1);
-                        $("#uploadButton").text("上传");
+                        // 检查是否还有文件选中
+                        var input = document.getElementById("uploadFile");
+                        if (input.files.length > 0) {
+                            $("#uploadButton").prop("disabled", false);
+                            $("#uploadButton").text("⬆️ Start Upload");
+                        } else {
+                            $("#uploadButton").prop("disabled", true);
+                            $("#uploadButton").text("⬆️ Please select files first");
+                        }
                         $("#loading").hide();
                     }
                 });
         });
     }
     function readAndUploadFile(file) {
-        var reader = new FileReader();
-        reader.onload = function (e) {
-            // e.target.result 包含读取的文件内容
-            var fileContent = e.target.result;
-            // 调用上传文件的函数
-            uploadFile(file, fileContent);
-        };
-        // 以文本形式读取文件内容
-        reader.readAsText(file);
+        // 直接调用上传文件的函数
+        uploadFile(file);
     }
     document.addEventListener("paste", function (e) {
         for (var o = e.clipboardData.items, t = 0; t < o.length; t++) {
@@ -178,8 +196,11 @@
             -1 !== n.type.indexOf("image") &&
                 ((a = n.getAsFile()),
                     $("#uploadFileLabel")
-                        .text("已选择剪贴板文件")
+                        .text("Clipboard file selected")
                         .css("background-color", "#0056b3"),
+                    // 启用上传按钮
+                    $("#uploadButton").prop("disabled", false),
+                    $("#uploadButton").text("⬆️ Start Upload"),
                     uploadFile(a));
         }
     }),
@@ -189,16 +210,16 @@
                 if (files.length > 0) {
                     if (files.length === 1) {
                         $("#uploadFileLabel")
-                            .text("已选择文件: " + files[0].name)
+                            .text("Selected: " + files[0].name)
                             .css("background-color", "#0056b3");
                     } else {
                         $("#uploadFileLabel")
-                            .text("已选择多个文件")
+                            .text("Selected " + files.length + " files")
                             .css("background-color", "#0056b3");
                     }
                 } else {
                     $("#uploadFileLabel")
-                        .text("选择文件")
+                        .text("Choose Files")
                         .css("background-color", "#007BFF");
                 }
             });
@@ -209,24 +230,12 @@
                         readAndUploadFile(input.files[i]);
                     }
                 } else {
-                    alert("请选择一个文件");
+                    alert("No file!");
                 }
             });
         });
 </script>
-<a target="_blank" href="https://github.com/csznet/tgState"><svg version="1.1" id="Layer_1"
-        xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="44px"
-        height="15px" viewBox="0 0 44 15" enable-background="new 0 0 44 15" xml:space="preserve">
-        <image id="image0" width="44" height="15" x="0" y="0" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAPBAMAAABtkjCqAAAABGdBTUEAALGPC/xhBQAAACBjSFJN
-AAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAAKlBMVEUAAAD/////ZgCZmWb/
-aAT/+vj/agj//fz8/Pr9/f36+vj/+PT/ZwOammiamlTzAAAAAWJLR0QB/wIt3gAAAAlwSFlzAAAL
-EwAACxMBAJqcGAAAAAd0SU1FB+cKAw8uKd154KgAAABtSURBVBjTY2DADhgFsQABBkYlOBA2hgHS
-hR1FlRIFiwQFhYQtjC0sBScvFAQLB6kFBQHVaisJW062sACqbYYIKwFVK+kEKQlbXLxhKQgXVgNK
-BKkCzbYw7kSoVhRVEhRUQpgNFaaGu7GHCXYAAPxWLJi8tpSVAAAAJXRFWHRkYXRlOmNyZWF0ZQAy
-MDIzLTEwLTAzVDE1OjQ2OjQxKzAwOjAwZpEQ6AAAACV0RVh0ZGF0ZTptb2RpZnkAMjAyMy0xMC0w
-M1QxNTo0Njo0MSswMDowMBfMqFQAAAAodEVYdGRhdGU6dGltZXN0YW1wADIwMjMtMTAtMDNUMTU6
-NDY6NDErMDA6MDBA2YmLAAAAAElFTkSuQmCC" />
-    </svg></a>
+
 </body>
 
 </html>

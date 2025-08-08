@@ -1,6 +1,426 @@
 {{template "public/header" .}}
-    <h1>上传文件到 Telegram</h1><label for="uploadFile" id="uploadFileLabel" class="custom-file-label">选择文件</label> <input
-        type="file" name="file" id="uploadFile" class="custom-file-input" multiple> <button id="uploadButton">上传</button>
-    <div id="loading">上传中...</div>
+<div class="main-container">
+    <h1>📁 File Upload to Telegram</h1>
+    <p class="subtitle">Secure, Fast, Permanent Storage</p>
+    
+    <div class="upload-box">
+        <div class="drop-zone" id="dropZone">
+            <div class="upload-icon">📤</div>
+            <p class="drop-text">Drag files here or click to select</p>
+            <label for="uploadFile" id="uploadFileLabel" class="file-label">
+                Choose Files
+            </label>
+            <input type="file" name="file" id="uploadFile" class="custom-file-input" multiple>
+        </div>
+        
+        <button id="uploadButton" class="upload-button" disabled>
+            🈳 No file
+        </button>
+        
+        <div class="features">
+            <span class="feature">📊 Multiple Files</span>
+            <span class="feature">🔒 Secure</span>
+            <span class="feature">⚡ Fast</span>
+        </div>
+    </div>
+    
+    <div id="loading" class="loading">Uploading...</div>
     <div id="response" class="ui-widget"></div>
+</div>
+
+<style>
+.main-container {
+    max-width: 600px;
+    margin: 20px auto;
+    padding: 0 15px;
+    box-sizing: border-box;
+}
+
+.main-container h1 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 8px;
+    font-size: 1.8rem;
+}
+
+.subtitle {
+    text-align: center;
+    color: #666;
+    margin-bottom: 30px;
+    font-size: 0.95rem;
+}
+
+.upload-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 30px 20px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+}
+
+.drop-zone {
+    border: 2px dashed #007bff;
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    transition: all 0.3s ease;
+    background: #f8f9fa;
+    margin-bottom: 20px;
+}
+
+.drop-zone:hover {
+    border-color: #0056b3;
+    background: #e3f2fd;
+}
+
+.drop-zone.drag-over {
+    border-color: #28a745;
+    background: #e8f5e8;
+    transform: scale(1.01);
+}
+
+.upload-icon {
+    font-size: 2.5rem;
+    margin-bottom: 15px;
+}
+
+.drop-text {
+    color: #495057;
+    margin-bottom: 20px;
+    font-size: 1rem;
+}
+
+.file-label {
+    display: inline-block;
+    background: #007bff;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: background 0.2s;
+}
+
+.file-label:hover {
+    background: #0056b3;
+}
+
+.upload-button {
+    width: 100%;
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 12px;
+    border-radius: 6px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-bottom: 20px;
+}
+
+.upload-button:hover:not(:disabled) {
+    background: #218838;
+}
+
+.upload-button:disabled {
+    background: #6c757d !important;
+    cursor: not-allowed;
+    opacity: 0.7;
+    transform: none;
+}
+
+.upload-button:disabled:hover {
+    background: #6c757d !important;
+    transform: none;
+}
+
+.features {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.feature {
+    color: #6c757d;
+    font-size: 0.85rem;
+}
+
+.loading {
+    text-align: center;
+    color: #007bff;
+    font-weight: 500;
+    display: none;
+}
+
+/* 响应区域 */
+#response {
+    max-height: 500px;
+    overflow-y: auto;
+    margin-top: 20px;
+}
+
+#response::-webkit-scrollbar {
+    width: 6px;
+}
+
+#response::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#response::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+#response::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* 响应结果样式 */
+.response-item {
+    margin: 10px 0;
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 4px solid;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    word-wrap: break-word;
+    word-break: break-all;
+    overflow-wrap: break-word;
+}
+
+/* 文件信息样式 */
+.file-info {
+    margin-bottom: 8px;
+    font-size: 1rem;
+    color: #155724;
+}
+
+.file-link {
+    margin-bottom: 12px;
+}
+
+.file-link a {
+    color: #0066cc;
+    text-decoration: none;
+    word-break: break-all;
+    display: inline-block;
+    max-width: 100%;
+    line-height: 1.4;
+    padding: 6px 10px;
+    background: rgba(0, 102, 204, 0.1);
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+.response-success {
+    border-left-color: #28a745;
+    background: #f8fff9;
+    color: #155724;
+}
+
+.response-error {
+    border-left-color: #dc3545;
+    background: #fff5f5;
+    color: #721c24;
+}
+
+.response-success a:not(.file-link > a) {
+    color: #0066cc;
+    text-decoration: none;
+    word-break: break-all;
+    display: inline-block;
+    max-width: 100%;
+    line-height: 1.4;
+    margin: 4px 0;
+    padding: 4px 8px;
+    background: rgba(0, 102, 204, 0.1);
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+.response-success a:hover {
+    text-decoration: underline;
+}
+
+/* 复制按钮容器 */
+.copy-links {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* 复制按钮样式 */
+.copy-code {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    user-select: none;
+    display: inline-block;
+}
+
+/* 短链特殊样式 */
+.response-success:has([data-clipboard-text*="/s/"]) {
+    border-left-color: #17a2b8;
+    background: #f0f9ff;
+}
+
+.response-success:has([data-clipboard-text*="/s/"]) .copy-code:first-child {
+    background: #17a2b8;
+}
+
+.response-success:has([data-clipboard-text*="/s/"]) .copy-code:first-child:hover {
+    background: #138496;
+}
+
+.copy-code:hover {
+    background: #0056b3;
+    transform: translateY(-1px);
+}
+
+.copy-code:active {
+    transform: translateY(0);
+}
+
+/* 复制成功状态 */
+.copy-code.copied {
+    background: #28a745;
+}
+
+/* 响应式 */
+@media (max-width: 480px) {
+    .main-container {
+        margin: 10px auto;
+        padding: 0 10px;
+    }
+    
+    .main-container h1 {
+        font-size: 1.5rem;
+    }
+    
+    .upload-box {
+        padding: 20px 15px;
+    }
+    
+    .drop-zone {
+        padding: 30px 15px;
+    }
+    
+    .features {
+        gap: 15px;
+    }
+    
+    .response-item {
+        padding: 12px;
+        font-size: 0.9rem;
+    }
+    
+    .copy-links {
+        gap: 6px;
+    }
+    
+    .copy-code {
+        padding: 5px 10px;
+        font-size: 0.8rem;
+    }
+    
+    /* 短链在移动设备上的样式 */
+    .response-success:has([data-clipboard-text*="/s/"]) {
+        border-left-color: #17a2b8;
+        background: #f0f9ff;
+    }
+}</style>
+
+<script>
+// 拖拽上传功能
+document.addEventListener('DOMContentLoaded', function() {
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('uploadFile');
+    const fileLabel = document.getElementById('uploadFileLabel');
+    const uploadButton = document.getElementById('uploadButton');
+    
+    // 防止默认拖拽行为
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+        document.body.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    // 高亮拖拽区域
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, unhighlight, false);
+    });
+    
+    // 处理文件拖拽
+    dropZone.addEventListener('drop', handleDrop, false);
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    function highlight(e) {
+        dropZone.classList.add('drag-over');
+    }
+    
+    function unhighlight(e) {
+        dropZone.classList.remove('drag-over');
+    }
+    
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        
+        fileInput.files = files;
+        updateFileLabel(files);
+        updateUploadButton(files);
+    }
+    
+    function updateFileLabel(files) {
+        if (files.length > 0) {
+            if (files.length === 1) {
+                fileLabel.textContent = `File: ${files[0].name}`;
+            } else {
+                fileLabel.textContent = `File count: ${files.length}`;
+            }
+            fileLabel.style.background = '#28a745';
+        } else {
+            fileLabel.textContent = '选择文件';
+            fileLabel.style.background = '#007bff';
+        }
+    }
+    
+    function updateUploadButton(files) {
+        if (files && files.length > 0) {
+            uploadButton.disabled = false;
+            uploadButton.textContent = '⬆️ UPLOAD';
+            uploadButton.style.background = '#28a745';
+        } else {
+            uploadButton.disabled = true;
+            uploadButton.textContent = '🪹 No file';
+            uploadButton.style.background = '#6c757d';
+        }
+    }
+    
+    // 文件选择事件
+    fileInput.addEventListener('change', function() {
+        updateFileLabel(this.files);
+        updateUploadButton(this.files);
+    });
+});
+</script>
+
 {{template "public/footer" .}}
