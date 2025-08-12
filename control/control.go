@@ -18,6 +18,81 @@ import (
 	"csz.net/tgstate/utils"
 )
 
+// getContentTypeFromExtension 根据文件扩展名返回对应的MIME类型
+func getContentTypeFromExtension(filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
+
+	// 视频格式
+	videoTypes := map[string]string{
+		".mp4":  "video/mp4",
+		".avi":  "video/x-msvideo",
+		".mov":  "video/quicktime",
+		".wmv":  "video/x-ms-wmv",
+		".flv":  "video/x-flv",
+		".webm": "video/webm",
+		".mkv":  "video/x-matroska",
+		".3gp":  "video/3gpp",
+		".m4v":  "video/x-m4v",
+		".ts":   "video/mp2t",
+	}
+
+	// 音频格式
+	audioTypes := map[string]string{
+		".mp3":  "audio/mpeg",
+		".wav":  "audio/wav",
+		".flac": "audio/flac",
+		".aac":  "audio/aac",
+		".ogg":  "audio/ogg",
+		".wma":  "audio/x-ms-wma",
+		".m4a":  "audio/mp4",
+		".opus": "audio/opus",
+	}
+
+	// 图片格式
+	imageTypes := map[string]string{
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".png":  "image/png",
+		".gif":  "image/gif",
+		".webp": "image/webp",
+		".bmp":  "image/bmp",
+		".svg":  "image/svg+xml",
+	}
+
+	if contentType, exists := videoTypes[ext]; exists {
+		return contentType
+	}
+	if contentType, exists := audioTypes[ext]; exists {
+		return contentType
+	}
+	if contentType, exists := imageTypes[ext]; exists {
+		return contentType
+	}
+
+	return "application/octet-stream"
+}
+
+// isMediaFile 检查文件是否为媒体文件（视频、音频、图片）
+func isMediaFile(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+
+	mediaExts := []string{
+		// 视频
+		".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv", ".3gp", ".m4v", ".ts",
+		// 音频
+		".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a", ".opus",
+		// 图片
+		".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg",
+	}
+
+	for _, mediaExt := range mediaExts {
+		if ext == mediaExt {
+			return true
+		}
+	}
+	return false
+}
+
 // UploadAPI 上传图片api
 func UploadAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -43,6 +118,15 @@ func UploadAPI(w http.ResponseWriter, r *http.Request) {
 		// 如果设置了AllowedExts，则使用设置的文件类型
 		if len(conf.AllowedExts) > 0 {
 			allowedExts = append(allowedExts, strings.Split(conf.AllowedExts, ",")...)
+		} else {
+			// 如果没有设置特定的允许扩展名，添加常见的媒体文件格式
+			mediaExts := []string{
+				// 视频格式
+				".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv", ".3gp", ".m4v", ".ts",
+				// 音频格式
+				".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a", ".opus",
+			}
+			allowedExts = append(allowedExts, mediaExts...)
 		}
 
 		var fileName = header.Filename
@@ -160,31 +244,64 @@ func D(w http.ResponseWriter, r *http.Request) {
 	if err == nil && record.FileId != "" {
 		fileId = record.FileId
 	}
-	// 发起HTTP GET请求来获取Telegram图片
+
+	// 发起HTTP GET请求来获取Telegram文件
 	fileUrl, _ := utils.GetDownloadUrl(fileId)
-	resp, err := http.Get(fileUrl)
+
+	// 创建HTTP请求，支持Range请求
+	req, err := http.NewRequest("GET", fileUrl, nil)
+	if err != nil {
+		http.Error(w, "Failed to create request", http.StatusInternalServerError)
+		return
+	}
+
+	// 如果客户端发送了Range请求头，转发给Telegram
+	rangeHeader := r.Header.Get("Range")
+	if rangeHeader != "" {
+		req.Header.Set("Range", rangeHeader)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		http.Error(w, "Failed to fetch content", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Disposition", "inline") // 设置为 "inline" 以支持在线播放
+	defer resp.Body.Close()
+
 	// 检查Content-Type是否为图片类型
 	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/octet-stream") {
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte("404 Not Found"))
 		return
 	}
-	contentLength, err := strconv.Atoi(resp.Header.Get("Content-Length"))
-	if err != nil {
-		log.Println("获取Content-Length出错:", err)
-		return
-	}
-	buffer := make([]byte, contentLength)
-	n, err := resp.Body.Read(buffer)
-	defer resp.Body.Close()
-	if err != nil && err != io.ErrUnexpectedEOF {
-		log.Println("读取响应主体数据时发生错误:", err)
-		return
+	// 获取内容长度
+	var contentLength int
+	var buffer []byte
+	var n int
+
+	contentLengthStr := resp.Header.Get("Content-Length")
+	if contentLengthStr != "" {
+		contentLength, err = strconv.Atoi(contentLengthStr)
+		if err != nil {
+			log.Println("获取Content-Length出错:", err)
+			return
+		}
+		buffer = make([]byte, contentLength)
+		n, err = resp.Body.Read(buffer)
+		if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+			log.Println("读取响应主体数据时发生错误:", err)
+			return
+		}
+	} else {
+		// 如果没有Content-Length，读取所有内容
+		buffer, err = io.ReadAll(resp.Body)
+		if err != nil {
+			log.Println("读取响应主体数据时发生错误:", err)
+			return
+		}
+		n = len(buffer)
+		contentLength = n
 	}
 	// 输出文件内容到控制台
 	if string(buffer[:12]) == "tgstate-blob" {
@@ -226,16 +343,49 @@ func D(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// 使用DetectContentType函数检测文件类型
 		contentType := http.DetectContentType(buffer)
+
+		// 如果有文件名记录，尝试根据扩展名获取更准确的Content-Type
+		if err == nil && record.Filename != "" {
+			if detectedType := getContentTypeFromExtension(record.Filename); detectedType != "application/octet-stream" {
+				contentType = detectedType
+			}
+		}
+
 		w.Header().Set("Content-Type", contentType)
 
-		// 设置文件名，优先使用数据库中的原始文件名
+		// 设置文件名和Content-Disposition，优先使用数据库中的原始文件名
 		if err == nil && record.Filename != "" {
 			// 对文件名进行URL编码以处理特殊字符
 			encodedFilename := url.QueryEscape(record.Filename)
-			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", record.Filename, encodedFilename))
+
+			// 如果是媒体文件，设置为inline以支持浏览器内播放
+			if isMediaFile(record.Filename) {
+				w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"; filename*=UTF-8''%s", record.Filename, encodedFilename))
+			} else {
+				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", record.Filename, encodedFilename))
+			}
 		} else {
 			// 如果没有找到记录，使用默认的文件名
 			w.Header().Set("Content-Disposition", "attachment")
+		}
+
+		// 添加支持HTTP Range请求的头部，用于视频播放器的拖拽功能
+		if strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "audio/") {
+			w.Header().Set("Accept-Ranges", "bytes")
+
+			// 如果是Range请求，传递相关的响应头
+			if rangeHeader != "" && resp.StatusCode == http.StatusPartialContent {
+				// 传递Range相关的响应头
+				if contentRange := resp.Header.Get("Content-Range"); contentRange != "" {
+					w.Header().Set("Content-Range", contentRange)
+				}
+				if acceptRanges := resp.Header.Get("Accept-Ranges"); acceptRanges != "" {
+					w.Header().Set("Accept-Ranges", acceptRanges)
+				}
+
+				// 设置206状态码
+				w.WriteHeader(http.StatusPartialContent)
+			}
 		}
 
 		_, err = w.Write(buffer[:n])
@@ -244,11 +394,14 @@ func D(w http.ResponseWriter, r *http.Request) {
 			log.Println(http.StatusInternalServerError)
 			return
 		}
-		_, err = io.Copy(w, resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			log.Println(http.StatusInternalServerError)
-			return
+
+		// 如果还有剩余内容，继续复制
+		if resp.Body != nil {
+			_, err = io.Copy(w, resp.Body)
+			if err != nil {
+				log.Println("复制剩余内容时出错:", err)
+				return
+			}
 		}
 	}
 }
