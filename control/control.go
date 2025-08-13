@@ -144,14 +144,16 @@ func UploadAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		res := conf.UploadResponse{
-			Code:    0,
+			Code:    1,
 			Message: "error",
 		}
 		fileId := utils.UpDocument(utils.TgFileData(fileName, file))
 		if fileName != "blob" {
 			ip := r.RemoteAddr // 获取上传者IP
+			userFingerprint := r.FormValue("userFingerprint")
+			shared := r.FormValue("shared") == "true"
 			// 插入数据到数据库
-			err := SaveFileRecord(fileId, fileName, ip)
+			err := SaveFileRecord(fileId, fileName, ip, userFingerprint, shared)
 			if err != nil {
 				errJsonMsg("Unable to save file record", w)
 			}
@@ -188,7 +190,7 @@ func UploadAPI(w http.ResponseWriter, r *http.Request) {
 			// url encode imageUrl
 			proxyUrl := conf.ProxyUrl + "/" + url.QueryEscape(imageUrl)
 			res = conf.UploadResponse{
-				Code:         1,
+				Code:         0,
 				Message:      downloadUrl,
 				ImgUrl:       imageUrl,
 				ProxyUrl:     proxyUrl,
@@ -408,6 +410,15 @@ func D(w http.ResponseWriter, r *http.Request) {
 
 // Index 首页
 func Index(w http.ResponseWriter, r *http.Request) {
+	// 检查是否存在构建的前端文件
+	if file, err := assets.Dist.ReadFile("dist/index.html"); err == nil {
+		// 使用新的Vue前端
+		w.Header().Set("Content-Type", "text/html")
+		w.Write(file)
+		return
+	}
+
+	// 回退到原始模板
 	htmlPath := "templates/images.tmpl"
 	if conf.Mode == "p" {
 		htmlPath = "templates/files.tmpl"
@@ -515,7 +526,7 @@ func FilesAPI(w http.ResponseWriter, r *http.Request) {
 
 	if conf.ApiPass != "" && password != conf.ApiPass {
 		response.Message = "Unauthorized"
-		response.Code = http.StatusUnauthorized
+		response.Code = 1
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(response)
 		return
@@ -541,7 +552,7 @@ func ShortLinksAPI(w http.ResponseWriter, r *http.Request) {
 
 	if conf.ApiPass != "" && password != conf.ApiPass {
 		response.Message = "Unauthorized"
-		response.Code = http.StatusUnauthorized
+		response.Code = 1
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(response)
 		return
@@ -555,6 +566,121 @@ func ShortLinksAPI(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.WriteHeader(http.StatusOK)
 	}
+	json.NewEncoder(w).Encode(response)
+}
+
+// HistoryAPI 获取用户历史文件API
+func HistoryAPI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	userFingerprint := r.URL.Query().Get("fingerprint")
+	if userFingerprint == "" {
+		response := conf.ResponseResult{
+			Code:    1,
+			Message: "Missing fingerprint parameter",
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// 获取分页参数
+	page := 1
+	pageSize := 20
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+	if pageSizeStr := r.URL.Query().Get("pageSize"); pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 && ps <= 100 {
+			pageSize = ps
+		}
+	}
+
+	records, err := GetFilesByUserFingerprint(userFingerprint, page, pageSize)
+	if err != nil {
+		response := conf.ResponseResult{
+			Code:    1,
+			Message: "Failed to get user history",
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// 获取总数
+	total, _ := GetUserFilesCount(userFingerprint)
+
+	responseData := map[string]interface{}{
+		"files": records,
+		"pagination": map[string]interface{}{
+			"page":     page,
+			"pageSize": pageSize,
+			"total":    total,
+			"hasMore":  len(records) == pageSize,
+		},
+	}
+
+	response := conf.ResponseResult{
+		Code:    0,
+		Message: "ok",
+		Data:    responseData,
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+// PlazaAPI 获取广场文件API
+func PlazaAPI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// 获取分页参数
+	page := 1
+	pageSize := 20
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+	if pageSizeStr := r.URL.Query().Get("pageSize"); pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 && ps <= 100 {
+			pageSize = ps
+		}
+	}
+
+	records, err := GetSharedFiles(page, pageSize)
+	if err != nil {
+		response := conf.ResponseResult{
+			Code:    1,
+			Message: "Failed to get plaza files",
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// 获取总数
+	total, _ := GetSharedFilesCount()
+
+	responseData := map[string]interface{}{
+		"files": records,
+		"pagination": map[string]interface{}{
+			"page":     page,
+			"pageSize": pageSize,
+			"total":    total,
+			"hasMore":  len(records) == pageSize,
+		},
+	}
+
+	response := conf.ResponseResult{
+		Code:    0,
+		Message: "ok",
+		Data:    responseData,
+	}
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
 }
 
@@ -595,14 +721,15 @@ func ChunkUploadAPI(w http.ResponseWriter, r *http.Request) {
 
 	// 保存分片信息到数据库
 	ip := r.RemoteAddr
-	err = SaveChunkRecord(uploadId, chunkIndex, chunkId, fileName, ip)
+	userFingerprint := r.FormValue("userFingerprint")
+	err = SaveChunkRecord(uploadId, chunkIndex, chunkId, fileName, ip, userFingerprint)
 	if err != nil {
 		errJsonMsg("Failed to save chunk record", w)
 		return
 	}
 
 	response := conf.UploadResponse{
-		Code:    1,
+		Code:    0,
 		Message: "Chunk uploaded successfully",
 		ChunkId: chunkId,
 	}
@@ -622,10 +749,12 @@ func MergeChunksAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		UploadId string   `json:"uploadId"`
-		FileName string   `json:"fileName"`
-		ChunkIds []string `json:"chunkIds"`
-		FileSize int64    `json:"fileSize"`
+		UploadId        string   `json:"uploadId"`
+		FileName        string   `json:"fileName"`
+		ChunkIds        []string `json:"chunkIds"`
+		FileSize        int64    `json:"fileSize"`
+		UserFingerprint string   `json:"userFingerprint"`
+		Shared          bool     `json:"shared"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -647,7 +776,7 @@ func MergeChunksAPI(w http.ResponseWriter, r *http.Request) {
 
 	// 保存文件记录
 	ip := r.RemoteAddr
-	err := SaveFileRecord(mergedFileId, req.FileName, ip)
+	err := SaveFileRecord(mergedFileId, req.FileName, ip, req.UserFingerprint, req.Shared)
 	if err != nil {
 		errJsonMsg("Failed to save file record", w)
 		return
@@ -684,7 +813,7 @@ func MergeChunksAPI(w http.ResponseWriter, r *http.Request) {
 	proxyUrl := conf.ProxyUrl + "/" + url.QueryEscape(imageUrl)
 
 	response := conf.UploadResponse{
-		Code:         1,
+		Code:         0,
 		Message:      downloadUrl,
 		ImgUrl:       imageUrl,
 		ProxyUrl:     proxyUrl,
@@ -704,12 +833,59 @@ func MergeChunksAPI(w http.ResponseWriter, r *http.Request) {
 func errJsonMsg(msg string, w http.ResponseWriter) {
 	// 这里示例直接返回JSON响应
 	response := conf.UploadResponse{
-		Code:    0,
+		Code:    1,
 		Message: msg,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+// ServeDistFiles 服务静态文件
+func ServeDistFiles(w http.ResponseWriter, r *http.Request) {
+	// 移除 /assets/ 前缀，保留文件路径
+	// path := strings.TrimPrefix(r.URL.Path, "/assets/")
+
+	// 构建完整的dist路径
+	distPath := "dist" + r.URL.Path
+
+	// 尝试从dist目录读取文件
+	if file, err := assets.Dist.ReadFile(distPath); err == nil {
+		// 设置正确的Content-Type
+		ext := filepath.Ext(r.URL.Path)
+		switch ext {
+		case ".js":
+			w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		case ".css":
+			w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		case ".html":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		case ".png":
+			w.Header().Set("Content-Type", "image/png")
+		case ".jpg", ".jpeg":
+			w.Header().Set("Content-Type", "image/jpeg")
+		case ".svg":
+			w.Header().Set("Content-Type", "image/svg+xml")
+		case ".ico":
+			w.Header().Set("Content-Type", "image/x-icon")
+		case ".woff", ".woff2":
+			w.Header().Set("Content-Type", "font/woff2")
+		case ".ttf":
+			w.Header().Set("Content-Type", "font/ttf")
+		case ".eot":
+			w.Header().Set("Content-Type", "application/vnd.ms-fontobject")
+		default:
+			w.Header().Set("Content-Type", "application/octet-stream")
+		}
+
+		// 设置缓存头
+		w.Header().Set("Cache-Control", "public, max-age=31536000")
+
+		w.Write(file)
+		return
+	}
+
+	http.NotFound(w, r)
 }
 
 func Middleware(next http.HandlerFunc) http.HandlerFunc {

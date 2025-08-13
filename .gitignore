@@ -30,3 +30,5 @@ tmp/*
 /tgState.zip
 
 __debug_bin.exe*
+
+node_modules/

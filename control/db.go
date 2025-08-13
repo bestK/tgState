@@ -31,6 +31,8 @@ func InitDB() (*sql.DB, error) {
 			fileId TEXT NOT NULL,
 			filename TEXT NOT NULL,
 			ip TEXT NOT NULL,
+			user_fingerprint TEXT,
+			shared INTEGER DEFAULT 0,
 			time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);`
 		_, err = db.Exec(query)
@@ -59,6 +61,7 @@ func InitDB() (*sql.DB, error) {
 			chunk_id TEXT NOT NULL,
 			file_name TEXT NOT NULL,
 			ip TEXT NOT NULL,
+			user_fingerprint TEXT,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(upload_id, chunk_index)
 		);`
@@ -66,16 +69,29 @@ func InitDB() (*sql.DB, error) {
 		if err != nil {
 			log.Fatal("Failed to create chunk_records table:", err)
 		}
+
+		// 迁移：为现有表添加 user_fingerprint 字段（如果不存在）
+		migrationQuery := `ALTER TABLE uploaded_files ADD COLUMN user_fingerprint TEXT;`
+		_, _ = db.Exec(migrationQuery) // 忽略错误，因为字段可能已存在
+
+		migrationQuery2 := `ALTER TABLE chunk_records ADD COLUMN user_fingerprint TEXT;`
+		_, _ = db.Exec(migrationQuery2) // 忽略错误，因为字段可能已存在
+
+		// 迁移：为现有表添加 shared 字段（如果不存在）
+		migrationQuery3 := `ALTER TABLE uploaded_files ADD COLUMN shared INTEGER DEFAULT 0;`
+		_, _ = db.Exec(migrationQuery3) // 忽略错误，因为字段可能已存在
 	})
 
 	return db, err
 }
 
 type FileRecord struct {
-	FileId   string    `json:"fileId"`
-	Filename string    `json:"filename"`
-	Ip       string    `json:"ip"`
-	Time     time.Time `json:"time"`
+	FileId          string    `json:"fileId"`
+	Filename        string    `json:"filename"`
+	Ip              string    `json:"ip"`
+	UserFingerprint string    `json:"userFingerprint"`
+	Shared          bool      `json:"shared"`
+	Time            time.Time `json:"time"`
 }
 
 type ShortLink struct {
@@ -89,28 +105,34 @@ type ShortLink struct {
 // GetFileNameByIDOrName 查询文件名
 func GetFileNameByIDOrName(idOrName string) (FileRecord, error) {
 	var record FileRecord
+	var shared int
 	// 执行查询，获取对应id或name的file记录
-	query := "SELECT fileId, filename, ip, time FROM uploaded_files WHERE fileId = ? OR filename = ? ORDER BY time DESC LIMIT 1"
-	err := db.QueryRow(query, idOrName, idOrName).Scan(&record.FileId, &record.Filename, &record.Ip, &record.Time)
+	query := "SELECT fileId, filename, ip, COALESCE(user_fingerprint, '') as user_fingerprint, COALESCE(shared, 0) as shared, time FROM uploaded_files WHERE fileId = ? OR filename = ? ORDER BY time DESC LIMIT 1"
+	err := db.QueryRow(query, idOrName, idOrName).Scan(&record.FileId, &record.Filename, &record.Ip, &record.UserFingerprint, &shared, &record.Time)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return FileRecord{}, fmt.Errorf("no file found with idOrName %s", idOrName)
 		}
 		return FileRecord{}, err
 	}
+	record.Shared = shared == 1
 
 	return record, nil
 }
 
-func SaveFileRecord(fileID string, fileName string, ip string) error {
+func SaveFileRecord(fileID string, fileName string, ip string, userFingerprint string, shared bool) error {
 	// 插入数据到数据库
-	_, err := db.Exec("INSERT INTO uploaded_files (fileId, filename, ip) VALUES (?, ?, ?)", fileID, fileName, ip)
+	sharedInt := 0
+	if shared {
+		sharedInt = 1
+	}
+	_, err := db.Exec("INSERT INTO uploaded_files (fileId, filename, ip, user_fingerprint, shared) VALUES (?, ?, ?, ?, ?)", fileID, fileName, ip, userFingerprint, sharedInt)
 	return err
 }
 
 func SelectAllRecord() ([]FileRecord, error) {
 	// 查询所有记录
-	rows, err := db.Query("SELECT fileId, filename, ip, time FROM uploaded_files")
+	rows, err := db.Query("SELECT fileId, filename, ip, COALESCE(user_fingerprint, '') as user_fingerprint, COALESCE(shared, 0) as shared, time FROM uploaded_files ORDER BY time DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -121,10 +143,12 @@ func SelectAllRecord() ([]FileRecord, error) {
 	// 迭代查询结果
 	for rows.Next() {
 		var record FileRecord
-		err := rows.Scan(&record.FileId, &record.Filename, &record.Ip, &record.Time)
+		var shared int
+		err := rows.Scan(&record.FileId, &record.Filename, &record.Ip, &record.UserFingerprint, &shared, &record.Time)
 		if err != nil {
 			return nil, err
 		}
+		record.Shared = shared == 1
 		records = append(records, record)
 	}
 
@@ -205,9 +229,9 @@ func GetShortCodeByFileId(fileId string) (string, error) {
 }
 
 // SaveChunkRecord 保存分片记录
-func SaveChunkRecord(uploadId, chunkIndex, chunkId, fileName, ip string) error {
-	_, err := db.Exec("INSERT OR REPLACE INTO chunk_records (upload_id, chunk_index, chunk_id, file_name, ip) VALUES (?, ?, ?, ?, ?)",
-		uploadId, chunkIndex, chunkId, fileName, ip)
+func SaveChunkRecord(uploadId, chunkIndex, chunkId, fileName, ip, userFingerprint string) error {
+	_, err := db.Exec("INSERT OR REPLACE INTO chunk_records (upload_id, chunk_index, chunk_id, file_name, ip, user_fingerprint) VALUES (?, ?, ?, ?, ?, ?)",
+		uploadId, chunkIndex, chunkId, fileName, ip, userFingerprint)
 	return err
 }
 
@@ -243,10 +267,81 @@ func CleanupChunkRecords(uploadId string) error {
 }
 
 type ChunkRecord struct {
-	UploadId   string    `json:"uploadId"`
-	ChunkIndex int       `json:"chunkIndex"`
-	ChunkId    string    `json:"chunkId"`
-	FileName   string    `json:"fileName"`
-	Ip         string    `json:"ip"`
-	CreatedAt  time.Time `json:"createdAt"`
+	UploadId        string    `json:"uploadId"`
+	ChunkIndex      int       `json:"chunkIndex"`
+	ChunkId         string    `json:"chunkId"`
+	FileName        string    `json:"fileName"`
+	Ip              string    `json:"ip"`
+	UserFingerprint string    `json:"userFingerprint"`
+	CreatedAt       time.Time `json:"createdAt"`
+}
+
+// GetFilesByUserFingerprint 根据用户指纹获取历史文件
+func GetFilesByUserFingerprint(userFingerprint string, page, pageSize int) ([]FileRecord, error) {
+	offset := (page - 1) * pageSize
+	rows, err := db.Query("SELECT fileId, filename, ip, user_fingerprint, COALESCE(shared, 0) as shared, time FROM uploaded_files WHERE user_fingerprint = ? ORDER BY time DESC LIMIT ? OFFSET ?", userFingerprint, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []FileRecord
+	for rows.Next() {
+		var record FileRecord
+		var shared int
+		err := rows.Scan(&record.FileId, &record.Filename, &record.Ip, &record.UserFingerprint, &shared, &record.Time)
+		if err != nil {
+			return nil, err
+		}
+		record.Shared = shared == 1
+		records = append(records, record)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return records, nil
+}
+
+// GetSharedFiles 获取广场文件（分页）
+func GetSharedFiles(page, pageSize int) ([]FileRecord, error) {
+	offset := (page - 1) * pageSize
+	rows, err := db.Query("SELECT fileId, filename, ip, COALESCE(user_fingerprint, '') as user_fingerprint, shared, time FROM uploaded_files WHERE shared = 1 ORDER BY time DESC LIMIT ? OFFSET ?", pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []FileRecord
+	for rows.Next() {
+		var record FileRecord
+		var shared int
+		err := rows.Scan(&record.FileId, &record.Filename, &record.Ip, &record.UserFingerprint, &shared, &record.Time)
+		if err != nil {
+			return nil, err
+		}
+		record.Shared = shared == 1
+		records = append(records, record)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return records, nil
+}
+
+// GetSharedFilesCount 获取广场文件总数
+func GetSharedFilesCount() (int, error) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM uploaded_files WHERE shared = 1").Scan(&count)
+	return count, err
+}
+
+// GetUserFilesCount 获取用户文件总数
+func GetUserFilesCount(userFingerprint string) (int, error) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM uploaded_files WHERE user_fingerprint = ?", userFingerprint).Scan(&count)
+	return count, err
 }

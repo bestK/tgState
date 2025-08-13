@@ -61,8 +61,14 @@ func web() {
 		http.HandleFunc("/api", control.Middleware(control.UploadAPI))
 		http.HandleFunc("/api/chunk", control.Middleware(control.ChunkUploadAPI))
 		http.HandleFunc("/api/merge", control.Middleware(control.MergeChunksAPI))
+		http.HandleFunc("/api/history", control.HistoryAPI)
+		http.HandleFunc("/api/plaza", control.PlazaAPI)
 		http.HandleFunc("/files", control.Middleware(control.FilesAPI))
 		http.HandleFunc("/shortlinks", control.Middleware(control.ShortLinksAPI))
+
+		// 静态文件服务
+		http.HandleFunc("/assets/", control.ServeDistFiles)
+
 		http.HandleFunc("/", control.Middleware(control.Index))
 	}
 
