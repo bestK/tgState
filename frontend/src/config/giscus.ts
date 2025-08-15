@@ -1,49 +1,49 @@
 // Giscus 评论系统配置
 export const giscusConfig = {
   // 你的 GitHub 仓库，格式：用户名/仓库名
-  repo: "bestk/tgState",
+  repo: import.meta.env.VITE_GISCUS_REPO || 'your-username/repo',
 
   // 仓库 ID (从 giscus.app 获取)
-  repoId: "R_kgDONBiMHA",
+  repoId: import.meta.env.VITE_GISCUS_REPO_ID,
 
   // Discussion 分类 (从 giscus.app 获取)
-  category: "General",
+  category: import.meta.env.VITE_GISCUS_CATEGORY || "General",
 
   // Discussion 分类 ID (从 giscus.app 获取)
-  categoryId: "DIC_kwDONBiMHM4CuNL-",
+  categoryId: import.meta.env.VITE_GISCUS_CATEGORY_ID || "DIC_kwDONBiMHM4CuNL-",
 
   // 页面 ↔️ discussion 映射关系
-  // 'pathname' - 使用页面路径
-  // 'url' - 使用页面完整 URL
-  // 'title' - 使用页面标题
-  // 'og:title' - 使用页面 og:title
-  mapping: "pathname" as const,
+  mapping: (import.meta.env.VITE_GISCUS_MAPPING || "pathname") as
+    | "pathname"
+    | "url"
+    | "title"
+    | "og:title",
 
   // 是否启用严格标题匹配
-  strict: false,
+  strict: import.meta.env.VITE_GISCUS_STRICT === "true",
 
   // 是否启用 reactions
-  reactionsEnabled: true,
+  reactionsEnabled: import.meta.env.VITE_GISCUS_REACTIONS_ENABLED !== "false",
 
   // 是否发出 reactions
-  emitMetadata: false,
+  emitMetadata: import.meta.env.VITE_GISCUS_EMIT_METADATA === "true",
 
   // 输入框位置
-  // 'top' - 在评论上方
-  // 'bottom' - 在评论下方
-  inputPosition: "top" as const,
+  inputPosition: (import.meta.env.VITE_GISCUS_INPUT_POSITION || "top") as
+    | "top"
+    | "bottom",
 
   // 主题
-  // 'light' - 浅色主题
-  // 'dark' - 深色主题
-  // 'preferred_color_scheme' - 跟随系统主题
-  // 'transparent_dark' - 透明深色主题
-  // 'dark_dimmed' - 暗淡深色主题
-  theme: "light" as const,
+  theme: (import.meta.env.VITE_GISCUS_THEME || "light") as
+    | "light"
+    | "dark"
+    | "preferred_color_scheme"
+    | "transparent_dark"
+    | "dark_dimmed",
 
   // 语言
-  lang: "en" as const,
+  lang: (import.meta.env.VITE_GISCUS_LANG || "en") as string,
 
   // 是否启用评论系统
-  enabled: true,
+  enabled: import.meta.env.VITE_GISCUS_ENABLED !== "false",
 };
