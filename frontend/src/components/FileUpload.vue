@@ -1,5 +1,5 @@
 <template>
-  <div class="w-full max-w-2xl mx-auto p-6">
+  <div class="w-full max-w-4xl mx-auto p-6">
     <!-- Header -->
     <div class="relative text-center mb-8">
       <!-- History Button -->
@@ -8,11 +8,21 @@
         class="absolute top-0 right-0 p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
         title="Upload History"
       >
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        <svg
+          class="w-6 h-6"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+          ></path>
         </svg>
       </button>
-      
+
       <h1 class="text-3xl font-bold text-gray-900 mb-2">
         📁 File Upload to Telegram
       </h1>
@@ -21,51 +31,62 @@
 
     <!-- Upload Area -->
     <Card class="p-6 mb-6">
-      <div
-        ref="dropZone"
-        :class="[
-          'border-2 border-dashed rounded-lg p-8 text-center transition-all duration-300',
-          isDragOver
-            ? 'border-green-400 bg-green-50 scale-105'
-            : 'border-blue-400 bg-blue-50 hover:border-blue-500 hover:bg-blue-100',
-        ]"
-        @dragenter.prevent="handleDragEnter"
-        @dragover.prevent="handleDragOver"
-        @dragleave.prevent="handleDragLeave"
-        @drop.prevent="handleDrop"
-      >
-        <div class="text-4xl mb-4">📤</div>
-        <p class="text-gray-700 mb-4">Drag files here or click to select</p>
-
-        <input
-          ref="fileInput"
-          type="file"
-          multiple
-          class="hidden"
-          @change="handleFileSelect"
-        />
-
-        <Button
-          @click="() => fileInput?.click()"
-          :variant="selectedFiles.length > 0 ? 'secondary' : 'default'"
-          class="mb-4"
+      <div class="flex flex-col lg:flex-row gap-6 items-center overflow-hidden">
+        <!-- Upload Zone -->
+        <div
+          ref="dropZone"
+          :class="[
+            'border-2 border-dashed rounded-lg p-8 text-center transition-all duration-800 flex-1 lg:flex-initial',
+            isDragOver
+              ? 'border-green-400 bg-green-50 scale-105'
+              : 'border-blue-400 bg-blue-50 hover:border-blue-500 hover:bg-blue-100',
+          ]"
+          style="min-width: 280px; flex: 1 1 500px; max-width: none"
+          @dragenter.prevent="handleDragEnter"
+          @dragover.prevent="handleDragOver"
+          @dragleave.prevent="handleDragLeave"
+          @drop.prevent="handleDrop"
         >
-          {{
-            selectedFiles.length > 0
-              ? `${selectedFiles.length} file(s) selected`
-              : "Choose Files"
-          }}
-        </Button>
+          <div class="text-4xl mb-4">📤</div>
+          <p class="text-gray-700 mb-4">Drag files here or click to select</p>
 
-        <div class="flex justify-center gap-4 text-sm text-gray-500">
-          <span>📊 Multiple Files</span>
-          <span>🔒 Secure</span>
-          <span>⚡ Fast</span>
+          <input
+            ref="fileInput"
+            type="file"
+            multiple
+            class="hidden"
+            @change="handleFileSelect"
+          />
+
+          <Button
+            @click="() => fileInput?.click()"
+            :variant="selectedFiles.length > 0 ? 'secondary' : 'default'"
+            class="mb-4"
+          >
+            {{
+              selectedFiles.length > 0
+                ? `${selectedFiles.length} file(s) selected`
+                : "Choose Files"
+            }}
+          </Button>
+
+          <div class="flex justify-center gap-4 text-sm text-gray-500">
+            <span>📊 Multiple Files</span>
+            <span>🔒 Secure</span>
+            <span>⚡ Fast</span>
+          </div>
+        </div>
+
+        <div class="flex-shrink-0">
+          <Cat />
         </div>
       </div>
 
       <!-- Share to Plaza Option -->
-      <div v-if="selectedFiles.length > 0" class="flex items-center justify-center gap-2 mt-4">
+      <div
+        v-if="selectedFiles.length > 0"
+        class="flex items-center justify-center gap-2 mt-4"
+      >
         <input
           id="shareToPlaza"
           type="checkbox"
@@ -215,17 +236,19 @@
 
     <!-- History Modal -->
     <HistoryModal :is-open="showHistory" @close="showHistory = false" />
-    
+
     <!-- Comments Section -->
     <div class="mt-12 pt-8 border-t border-gray-200">
-      <h2 class="text-xl font-semibold text-gray-900 mb-6 text-center">💬 Comments & Feedback</h2>
+      <h2 class="text-xl font-semibold text-gray-900 mb-6 text-center">
+        💬 Comments & Feedback
+      </h2>
       <GiscusComments />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, onMounted } from "vue";
 import {
   uploadFile,
   uploadChunk,
@@ -244,6 +267,7 @@ import Card from "@/components/ui/Card.vue";
 import Progress from "@/components/ui/Progress.vue";
 import HistoryModal from "@/components/HistoryModal.vue";
 import GiscusComments from "@/components/GiscusComments.vue";
+import Cat from "@/components/Cat.vue";
 
 const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_CONCURRENT_UPLOADS = 3;
@@ -401,26 +425,31 @@ const uploadSmallFile = async (file: File): Promise<void> => {
   let lastTime = startTime;
 
   try {
-    const result = await uploadFile(file, userFingerprint.value, shareToPlaza.value, (progress) => {
-      const now = Date.now();
-      const timeDiff = (now - lastTime) / 1000;
-      const progressDiff = progress - lastProgress;
+    const result = await uploadFile(
+      file,
+      userFingerprint.value,
+      shareToPlaza.value,
+      (progress) => {
+        const now = Date.now();
+        const timeDiff = (now - lastTime) / 1000;
+        const progressDiff = progress - lastProgress;
 
-      if (timeDiff > 0.5 && progressDiff > 0) {
-        const speed = ((progressDiff / 100) * file.size) / timeDiff;
-        const remainingProgress = 100 - progress;
-        const eta =
-          remainingProgress > 0
-            ? ((remainingProgress / 100) * file.size) / speed
-            : 0;
+        if (timeDiff > 0.5 && progressDiff > 0) {
+          const speed = ((progressDiff / 100) * file.size) / timeDiff;
+          const remainingProgress = 100 - progress;
+          const eta =
+            remainingProgress > 0
+              ? ((remainingProgress / 100) * file.size) / speed
+              : 0;
 
-        updateTaskProgress(task.id, progress, "Uploading...", speed, eta);
-        lastProgress = progress;
-        lastTime = now;
-      } else {
-        updateTaskProgress(task.id, progress, "Uploading...");
+          updateTaskProgress(task.id, progress, "Uploading...", speed, eta);
+          lastProgress = progress;
+          lastTime = now;
+        } else {
+          updateTaskProgress(task.id, progress, "Uploading...");
+        }
       }
-    });
+    );
 
     if (result.code === 0) {
       updateTaskProgress(task.id, 100, "Upload complete!");
