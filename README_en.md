@@ -1,8 +1,6 @@
 # tgState
 
-<video controls>
-    <source src="./assets/preview.webm" type="video/webm">
-</video>
+[preview.webm](https://github.com/user-attachments/assets/58c398d6-bfa0-4879-b9fe-407ca4050c68)
 
 [中文](https://github.com/csznet/tgState/blob/main/README.md)
 
