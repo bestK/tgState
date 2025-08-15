@@ -215,6 +215,12 @@
 
     <!-- History Modal -->
     <HistoryModal :is-open="showHistory" @close="showHistory = false" />
+    
+    <!-- Comments Section -->
+    <div class="mt-12 pt-8 border-t border-gray-200">
+      <h2 class="text-xl font-semibold text-gray-900 mb-6 text-center">💬 Comments & Feedback</h2>
+      <GiscusComments />
+    </div>
   </div>
 </template>
 
@@ -237,6 +243,7 @@ import Button from "@/components/ui/Button.vue";
 import Card from "@/components/ui/Card.vue";
 import Progress from "@/components/ui/Progress.vue";
 import HistoryModal from "@/components/HistoryModal.vue";
+import GiscusComments from "@/components/GiscusComments.vue";
 
 const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_CONCURRENT_UPLOADS = 3;
