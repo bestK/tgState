@@ -1,5 +1,8 @@
 # tgState
-==
+
+<video controls>
+    <source src="./assets/preview.webm" type="video/webm">
+</video>
 
 [中文](https://github.com/csznet/tgState/blob/main/README.md)
 
@@ -27,6 +30,7 @@ Demo image:
 <summary>NSFW</summary>
 
 ![tgState](https://tgstate.vercel.app/d/BQACAgUAAx0EcyK3ugACByxlOR-Nfl4esavoO4zdaYIP_k1KYQACDAsAAkf4yFVpf_awaEkS8jAE)
+
 </details>
 
 # Parameter Description
@@ -59,12 +63,12 @@ Fill in your bot token.
 
 ## pass
 
-Fill in the access password. If not needed, fill in ```none``` directly.
+Fill in the access password. If not needed, fill in `none` directly.
 
 ## mode
 
-- ```p``` represents running in cloud drive mode, with no restriction on uploaded suffixes.
-- ```m``` On top of the p mode, web upload is disabled, and upload can be done via private chat (if the target is an individual, only specified users can upload via private chat).
+- `p` represents running in cloud drive mode, with no restriction on uploaded suffixes.
+- `m` On top of the p mode, web upload is disabled, and upload can be done via private chat (if the target is an individual, only specified users can upload via private chat).
 
 ## url
 
@@ -78,7 +82,7 @@ Customize the running port.
 
 ## Get FIleID
 
-Replying with ```get``` to the file reference in the bot's chat can get the FileID. Access the resource by combining the built address and the obtained path.
+Replying with `get` to the file reference in the bot's chat can get the FileID. Access the resource by combining the built address and the obtained path.
 
 If the url parameter is configured, the complete address will be returned directly.
 
@@ -102,22 +106,21 @@ wget https://github.com/csznet/tgState/releases/latest/download/tgState_arm64.zi
 
 **Usage**
 
-```./tgState parameters```
+`./tgState parameters`
 
 **Example**
 
-```./tgState -token xxxx -target @xxxx```
+`./tgState -token xxxx -target @xxxx`
 
 **Run in the background**
 
-```nohup ./tgState parameters &```
+`nohup ./tgState parameters &`
 
 ## Docker
 
 Pull the image
 
-```docker pull csznet/tgstate:latest```
-
+`docker pull csznet/tgstate:latest`
 
 Start
 
@@ -141,6 +144,6 @@ Does not support files larger than 5MB and does not support Telegram in getting 
 
 # API Description
 
-POST method to the path ```/api```
+POST method to the path `/api`
 
 Form transmission, field name is image, content is binary data.

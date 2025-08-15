@@ -1,5 +1,8 @@
 tgState
-==
+
+<video controls>
+    <source src="./assets/preview.webm" type="video/webm">
+</video>
 
 [English](https://github.com/csznet/tgState/blob/main/README_en.md) 
 
