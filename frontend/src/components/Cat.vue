@@ -10,7 +10,7 @@
       @timeupdate="handleTimeUpdate"
     >
       <source
-        src="http://tgstate.linkof.link/d/BQACAgUAAyEGAASBAAHQNwACATtonvW_YOvmnmAoCXwAAfvOY9ZY1w8AAocXAAJpcPlUfl4m7iXOrpE2BA"
+        src="https://tgstate.linkof.link/d/BQACAgUAAxkDAAMQaakhUmYKf4n-xH8Wpm_bvMwRWw4AAjgjAALoFUhVkqUSZFoJlNc6BA"
         type="video/mp4"
       />
       Your browser does not support the video tag.
